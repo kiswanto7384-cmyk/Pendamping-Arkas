@@ -1,4 +1,3 @@
-[db_supabase.py](https://github.com/user-attachments/files/31551218/db_supabase.py)
 """
 Lapisan penyimpanan permanen (Supabase) untuk Pendamping ARKAS.
 
