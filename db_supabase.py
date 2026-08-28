@@ -1,19 +1,5 @@
 """
 Lapisan penyimpanan permanen (Supabase) untuk Pendamping ARKAS.
-
-Skema pakai: SATU SEKOLAH, TANPA LOGIN. Semua data disimpan dalam 1 baris
-tabel `arkas_state` (id=1) berbentuk JSON — jadi data tetap ada walau
-aplikasi di-restart / dibuka dari perangkat lain, asal APP_PASSWORD (kalau
-diaktifkan) & koneksi Supabase-nya sama.
-
-Kalau nanti perlu banyak sekolah dengan login masing-masing, tabel ini
-tinggal diubah jadi banyak baris (1 baris per akun, id = user_id dari
-Supabase Auth) — polanya sama, tinggal ganti ROW_ID jadi dinamis.
-
-Cara aktifkan: isi SUPABASE_URL & SUPABASE_KEY di st.secrets (lihat
-README_DEPLOY.md). Kalau belum diisi, aplikasi tetap jalan normal dengan
-penyimpanan sesi browser saja (seperti sebelumnya) — fitur simpan/muat
-database otomatis disembunyikan.
 """
 import json
 from datetime import date, datetime
@@ -23,13 +9,12 @@ import streamlit as st
 
 try:
     from supabase import create_client
-except ImportError:  # library belum terpasang - tetap jangan crash
+except ImportError:
     create_client = None
 
 TABLE = "arkas_state"
 ROW_ID = 1
 
-# Key session_state yang ikut disimpan/dimuat dari database.
 STATE_KEYS = [
     "sekolah", "npsn", "status_sekolah", "kepsek_nama", "bendahara_nama",
     "tahun_anggaran", "wilayah_3t",
@@ -40,11 +25,8 @@ STATE_KEYS = [
     "spj_pagu_komponen", "spj_bku",
 ]
 
-# Key yang isinya DataFrame (perlu perlakuan khusus saat simpan/muat).
 DATAFRAME_KEYS = {"rincian_rkas", "checklist_tahapan", "spj_bku"}
 
-# Kolom bertipe tanggal di tiap DataFrame di atas, supaya saat dimuat lagi
-# dari JSON, tipenya dikembalikan ke datetime.date (bukan string biasa).
 DATE_COLUMNS = {
     "checklist_tahapan": ["Target Tanggal"],
     "spj_bku": ["Tanggal"],
@@ -53,19 +35,27 @@ DATE_COLUMNS = {
 
 @st.cache_resource(show_spinner=False)
 def _get_client():
-    """Bikin koneksi Supabase sekali per proses server (di-cache)."""
+    """Bikin koneksi Supabase sekali per proses server."""
     if create_client is None:
         return None
     try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
-    except Exception:
-        return None
-    if not url or not key:
-        return None
-    try:
+        url = str(st.secrets.get("SUPABASE_URL", "")).strip()
+        key = str(st.secrets.get("SUPABASE_KEY", "")).strip()
+
+        # Bersihkan URL otomatis jika ada akhiran /rest/v1/ atau /
+        if url.endswith("/rest/v1/"):
+            url = url[:-9]
+        elif url.endswith("/rest/v1"):
+            url = url[:-8]
+        if url.endswith("/"):
+            url = url[:-1]
+
+        if not url or not key:
+            return None
+
         return create_client(url, key)
-    except Exception:
+    except Exception as e:
+        st.session_state["_db_error"] = f"Kesalahan Konfigurasi Supabase: {e}"
         return None
 
 
@@ -119,28 +109,23 @@ def _deserialize_state(payload: dict) -> dict:
 
 
 def load_state():
-    """Ambil data tersimpan dari Supabase. Balikin dict {key: value} atau
-    None kalau belum ada data / Supabase belum dikonfigurasi / gagal konek."""
+    """Ambil data tersimpan dari Supabase."""
     client = _get_client()
     if client is None:
         return None
     try:
         res = client.table(TABLE).select("data").eq("id", ROW_ID).limit(1).execute()
-    except Exception as e:
-        st.session_state["_db_error"] = f"Gagal memuat data: {e}"
-        return None
-    rows = res.data or []
-    if not rows or not rows[0].get("data"):
-        return None
-    try:
+        rows = res.data or []
+        if not rows or not rows[0].get("data"):
+            return None
         return _deserialize_state(rows[0]["data"])
     except Exception as e:
-        st.session_state["_db_error"] = f"Gagal membaca data tersimpan: {e}"
+        st.session_state["_db_error"] = f"Gagal memuat data dari Supabase: {e}"
         return None
 
 
 def save_state() -> bool:
-    """Simpan seluruh state relevan ke Supabase (1 baris, ditimpa/upsert)."""
+    """Simpan seluruh state relevan ke Supabase."""
     client = _get_client()
     if client is None:
         return False
@@ -149,10 +134,9 @@ def save_state() -> bool:
         client.table(TABLE).upsert({
             "id": ROW_ID,
             "data": payload,
-            "updated_at": datetime.now().isoformat(),
         }).execute()
         st.session_state.pop("_db_error", None)
         return True
     except Exception as e:
-        st.session_state["_db_error"] = f"Gagal menyimpan data: {e}"
+        st.session_state["_db_error"] = f"Gagal menyimpan data ke Supabase: {e}"
         return False
