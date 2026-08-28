@@ -203,6 +203,8 @@ with st.sidebar:
         st.info("Database belum terhubung — data cuma tersimpan selama sesi browser terbuka "
                 "(hilang kalau aplikasi di-restart). Lihat README_DEPLOY.md untuk mengaktifkan "
                 "penyimpanan permanen gratis dengan Supabase.", icon="ℹ️")
+        if st.session_state.get("_db_connect_error"):
+            st.warning(st.session_state["_db_connect_error"], icon="⚠️")
     st.divider()
     st.caption("📘 Ringkasan aturan mengacu Permendikdasmen No. 8 Tahun 2026 (Juknis BOSP 2026). "
                "Aturan dapat direvisi sewaktu-waktu — selalu cek Juknis resmi terbaru.")
