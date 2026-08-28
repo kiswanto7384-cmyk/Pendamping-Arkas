@@ -1,4 +1,3 @@
-[app_arkas.py](https://github.com/user-attachments/files/31551174/app_arkas.py)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
